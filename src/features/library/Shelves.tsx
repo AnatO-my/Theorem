@@ -1,3 +1,4 @@
+import { useSmartShelves } from "../../core/lib/useSmartShelves";
 
 import { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef, memo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -32,7 +33,7 @@ import {
     RotateCcw,
     Layers,
 } from "lucide-react";
-import type { Book, Collection, LibraryViewMode } from "../../core/types";
+import type { Book, Collection, LibraryViewMode, SmartShelfDefinition } from "../../core/types";
 
 const viewModeIcons: Record<LibraryViewMode, React.ReactNode> = {
     grid: <LayoutGrid className="w-4 h-4" />,
@@ -177,7 +178,7 @@ const ShelfCard = memo(function ShelfCard({ shelf, books, actualBookCount, onCli
                             </h3>
                         </button>
                         <p className="text-xs text-[color:var(--color-text-muted)] mt-0.5">
-                            {actualBookCount} {actualBookCount === 1 ? "book" : "books"}
+                            {shelf.smartRules ? "Smart shelf · " : ""}{actualBookCount} {actualBookCount === 1 ? "book" : "books"}
                         </p>
                     </div>
 
@@ -537,7 +538,7 @@ function ShelfDetail({ shelf, onBack }: ShelfDetailProps) {
         updateSettings({ libraryViewMode: nextMode });
     };
 
-    if (shelf.bookIds.length === 0) {
+    if (shelf.bookIds.length === 0 && !shelf.smartRules) {
         return <EmptyShelfDetail shelfName={shelf.name} onAddBooks={handleGoToLibrary} />;
     }
 
@@ -813,6 +814,8 @@ function ShelfDetail({ shelf, onBack }: ShelfDetailProps) {
                         <span className="hidden sm:inline">Select All</span>
                     </button>
                     <button
+                        disabled={!!shelf.smartRules}
+                        title={shelf.smartRules ? "Membership is managed by this shelf's rules" : undefined}
                         onClick={handleRemoveSelectedFromShelf}
                         className="ui-btn px-3 py-1.5 text-xs font-bold border-2 uppercase"
                     >
@@ -939,15 +942,16 @@ function ShelfDetail({ shelf, onBack }: ShelfDetailProps) {
 }
 
 export function ShelvesPage() {
-    const collections = useLibraryStore((state) => state.collections);
+    const shelfDefinitions = useLibraryStore((state) => state.collections);
     const books = useLibraryStore((state) => state.books);
+    const { collections, ready: smartShelvesReady, error: smartShelvesError } = useSmartShelves(books, shelfDefinitions);
     const addCollection = useLibraryStore((state) => state.addCollection);
     const removeCollection = useLibraryStore((state) => state.removeCollection);
     const updateCollection = useLibraryStore((state) => state.updateCollection);
     const searchQuery = useUIStore((state) => state.searchQuery);
     const [selectedShelfId, setSelectedShelfId] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingShelf, setEditingShelf] = useState<{ id: string; name: string; description?: string } | undefined>();
+    const [editingShelf, setEditingShelf] = useState<Collection | undefined>();
     const generalCollections = useMemo(() => collections, [collections]);
 
     const bookLookup = useMemo(
@@ -994,20 +998,21 @@ export function ShelvesPage() {
         setIsModalOpen(true);
     };
 
-    const handleEditShelf = (shelf: { id: string; name: string; description?: string }) => {
+    const handleEditShelf = (shelf: Collection) => {
         setEditingShelf(shelf);
         setIsModalOpen(true);
     };
 
-    const handleSaveShelf = (name: string, description: string) => {
+    const handleSaveShelf = (name: string, description: string, smartRules?: SmartShelfDefinition) => {
         if (editingShelf) {
-            updateCollection(editingShelf.id, { name, description });
+            updateCollection(editingShelf.id, { name, description, smartRules, bookIds: smartRules ? [] : editingShelf.bookIds });
         } else {
             addCollection({
                 id: crypto.randomUUID(),
                 name,
                 description,
                 bookIds: [],
+                smartRules,
                 kind: "general",
                 createdAt: new Date(),
             });
@@ -1028,6 +1033,9 @@ export function ShelvesPage() {
         }
     };
 
+    if (selectedShelfId && generalCollections.some((shelf) => shelf.id === selectedShelfId && shelf.smartRules) && !smartShelvesReady) {
+        return <div role={smartShelvesError ? "alert" : "status"} className="p-6">{smartShelvesError ?? "Updating smart shelves…"}</div>;
+    }
     if (selectedShelfId) {
         const shelf = generalCollections.find((s) => s.id === selectedShelfId);
         if (shelf) {
@@ -1096,11 +1104,7 @@ export function ShelvesPage() {
                             actualBookCount={getActualBookCount(shelf.bookIds)}
                             onClick={() => setSelectedShelfId(shelf.id)}
                             onEdit={() =>
-                                handleEditShelf({
-                                    id: shelf.id,
-                                    name: shelf.name,
-                                    description: shelf.description,
-                                })
+                                handleEditShelf(shelf)
                             }
                             onDelete={() => handleDeleteShelf(shelf.id, shelf.name)}
                         />
@@ -1108,6 +1112,7 @@ export function ShelvesPage() {
                 </div>
             )}
 
+            {!smartShelvesReady && <p role={smartShelvesError ? "alert" : "status"}>{smartShelvesError ?? "Updating smart shelves…"}</p>}
             <ShelfModal
                 isOpen={isModalOpen}
                 shelf={editingShelf}

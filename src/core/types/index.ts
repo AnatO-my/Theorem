@@ -44,11 +44,19 @@ export interface PdfViewState {
     presentationMode?: 'scroll' | 'paged' | 'two-page';
 }
 
+export interface BookSourceFolder {
+    root: string;
+    name: string;
+    relativePath: string;
+}
+
 export interface Book {
     id: string;
     title: string;
     author: string;
     filePath: string;
+    /** Original folder membership, independent of storage paths and shelves. */
+    sourceFolders?: BookSourceFolder[];
     storagePath?: string; 
     format: BookFormat;
     contentHash?: string;
@@ -154,6 +162,16 @@ export interface Annotation {
     chapterIndex?: number;
 }
 
+export interface SmartShelfRule {
+    field: "author" | "series" | "tag" | "category" | "format" | "status" | "favorite";
+    operator: "equals" | "contains";
+    value: string;
+}
+export interface SmartShelfDefinition {
+    mode: "all" | "any";
+    conditions: SmartShelfRule[];
+}
+
 export interface Collection {
     id: string;
     name: string;
@@ -163,6 +181,7 @@ export interface Collection {
     createdAt: Date;
     updatedAt?: Date;
     groupBySeries?: boolean;
+    smartRules?: SmartShelfDefinition;
 }
 
 export type TombstoneEntity = "book" | "annotation" | "collection" | "feed" | "rss_article" | "vocabulary" | "collection_book";

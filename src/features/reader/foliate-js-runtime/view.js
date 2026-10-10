@@ -34,7 +34,7 @@ const makeZipLoader = async (file, prefetchPromise) => {
     const toc = prefetch?.toc
 
     if (!textCache && !sizes) {
-        if (typeof window !== 'undefined' && window.__THEOREM_CORE_WORKER__ && typeof file?.arrayBuffer === 'function') {
+        if (!file?.isNativeRangeFile && typeof window !== 'undefined' && window.__THEOREM_CORE_WORKER__ && typeof file?.arrayBuffer === 'function') {
             try {
                 const buffer = await file.arrayBuffer();
                 const worker = window.__THEOREM_CORE_WORKER__;
@@ -404,6 +404,8 @@ export class View extends HTMLElement {
         if (this.isFixedLayout) {
             await import('./fixed-layout.js')
             this.renderer = document.createElement('foliate-fxl')
+        } else if (book.rendition?.comicFlow === 'scroll') {
+            this.renderer = document.createElement('theorem-comic-strip')
         } else {
             await import('./paginator.js')
             this.renderer = document.createElement('foliate-paginator')
@@ -657,7 +659,7 @@ export class View extends HTMLElement {
         doc.addEventListener('click', e => {
             const selection = doc.getSelection()
             // A live selection means the user was selecting, not tapping a
-            // highlight — let the selection pipeline handle it.
+            // highlight â€” let the selection pipeline handle it.
             if (selection && !selection.isCollapsed && selection.toString().trim()) return
             // Reject the tail end of a drag / long press.
             if (tapMoved) return
