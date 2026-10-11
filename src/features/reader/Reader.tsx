@@ -490,6 +490,9 @@ const BookReaderPage = memo(function BookReaderPage() {
         const book = getBook(bookId);
         if (!book) return;
 
+        // Native comic import already extracted the cover on disk. A fallback
+        // cover must not trigger a second, whole-archive read in the reader.
+        if (isTauri() && book.format === 'cbz' && book.coverExtractionDone) return;
         const hasRealCover = !!book.coverPath && !isFallbackCover(book.coverPath);
         if (hasRealCover && book.coverExtractionDone) {
             return;
@@ -963,28 +966,6 @@ const BookReaderPage = memo(function BookReaderPage() {
             loadedBookIdRef.current = null;
         };
     }, [currentBookId, getBook, loadAttempt]);
-
-    useEffect(() => {
-        if (!currentBookId) {
-            return;
-        }
-
-        const allBooks = useLibraryStore.getState().books;
-        const currentBookIndex = allBooks.findIndex((book) => book.id === currentBookId);
-        if (currentBookIndex === -1) {
-            return;
-        }
-
-        const upcomingBooks = allBooks.slice(currentBookIndex + 1, currentBookIndex + 4);
-        for (const book of upcomingBooks) {
-            if (book.format === 'pdf') {
-                continue;
-            }
-
-            const storagePath = book.storagePath || book.filePath;
-            void getBookBlob(book.id, storagePath).catch(e => console.error("[catch]", e));
-        }
-    }, [currentBookId]);
 
     const { recordPageTurn, setCurrentPageWordCount } = useReadingTime({
         currentBookId,

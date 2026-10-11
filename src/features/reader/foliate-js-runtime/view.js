@@ -34,7 +34,7 @@ const makeZipLoader = async (file, prefetchPromise) => {
     const toc = prefetch?.toc
 
     if (!textCache && !sizes) {
-        if (typeof window !== 'undefined' && window.__THEOREM_CORE_WORKER__ && typeof file?.arrayBuffer === 'function') {
+        if (!file?.isNativeRangeFile && typeof window !== 'undefined' && window.__THEOREM_CORE_WORKER__ && typeof file?.arrayBuffer === 'function') {
             try {
                 const buffer = await file.arrayBuffer();
                 const worker = window.__THEOREM_CORE_WORKER__;
@@ -404,6 +404,8 @@ export class View extends HTMLElement {
         if (this.isFixedLayout) {
             await import('./fixed-layout.js')
             this.renderer = document.createElement('foliate-fxl')
+        } else if (book.rendition?.comicFlow === 'scroll') {
+            this.renderer = document.createElement('theorem-comic-strip')
         } else {
             await import('./paginator.js')
             this.renderer = document.createElement('foliate-paginator')

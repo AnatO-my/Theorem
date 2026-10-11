@@ -82,7 +82,9 @@ pub async fn fetch_binary_content(url: String) -> Result<Response, String> {
 }
 
 #[tauri::command]
-pub async fn scan_library_folder_desktop(folder_path: String) -> Result<Vec<String>, String> {
+pub async fn scan_library_folder_desktop(
+    folder_path: String,
+) -> Result<Vec<tauri_plugin_mobile_folder_scan::ScannedBookFile>, String> {
     offload(move || crate::scan_library_folder_desktop(folder_path)).await
 }
 
@@ -595,4 +597,24 @@ pub async fn tts_text_chunks(text: String, lang: String) -> Result<Vec<String>, 
 #[tauri::command]
 pub async fn cli_setup_status() -> Result<crate::CliSetupStatus, String> {
     offload(crate::cli_setup_status).await
+}
+
+#[tauri::command]
+pub async fn finish_book_import(
+    app: AppHandle,
+    id: String,
+    format: String,
+    expected_size: u64,
+) -> Result<crate::book_import::ImportedBinary, String> {
+    offload(move || crate::book_import::finish_book_import(app, id, format, expected_size)).await
+}
+
+#[tauri::command]
+pub async fn import_book_path(
+    app: AppHandle,
+    id: String,
+    path: String,
+    format: String,
+) -> Result<crate::book_import::ImportedBinary, String> {
+    offload(move || crate::book_import::import_book_path(app, id, path, format)).await
 }

@@ -1,5 +1,7 @@
+import { canSetShelfParent, normalizeShelfHierarchy } from "../lib/shelf-hierarchy";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { mergeSourceFolders, normalizeSourceFolders } from "../lib/source-folders";
 import { triggerVaultAutoSync } from "../lib/vault-sync";
 import { deferredJsonStorage, memoizePartialize } from "../lib/persist-storage";
 import { scheduleMutationSync } from "../lib/sync-orchestrator";
@@ -323,6 +325,13 @@ function isPlaceholderAuthor(author: string): boolean {
 function mergeImportedBookMetadata(existingBook: Book, incomingBook: Book): Book {
     let changed = false;
     const nextBook = { ...existingBook };
+    if (incomingBook.sourceFolders?.length) {
+        const sourceFolders = mergeSourceFolders(existingBook.sourceFolders, incomingBook.sourceFolders);
+        if (JSON.stringify(sourceFolders) !== JSON.stringify(existingBook.sourceFolders ?? [])) {
+            nextBook.sourceFolders = sourceFolders;
+            changed = true;
+        }
+    }
 
     if (existingBook.syncedWithoutFile && (incomingBook.storagePath || incomingBook.filePath)) {
         nextBook.storagePath = incomingBook.storagePath || incomingBook.filePath;
@@ -428,6 +437,7 @@ function normalizePersistedBook(book: Book): Book {
         ...book,
         contentHash,
         filePath: normalizedFilePath,
+        sourceFolders: normalizeSourceFolders(book.sourceFolders),
         storagePath: normalizedStoragePath,
         coverExtractionDone: Boolean(book.coverExtractionDone || hasLegacyPersistedCoverPath),
         series: typeof book.series === "string" && book.series.trim().length > 0 ? book.series.trim() : undefined,
@@ -1243,13 +1253,16 @@ export const useLibraryStore = create<LibraryStore>()(
             },
 
             addCollection: (collection) => {
+                if (get().collections.some(shelf => shelf.id === collection.id)
+                    || !canSetShelfParent(get().collections, collection.id, collection.parentId)) return;
                 set((state) => ({ collections: [...state.collections, collection] }));
                 scheduleMutationSync();
             },
 
             removeCollection: (collectionId) => {
                 set((state) => ({
-                    collections: state.collections.filter((c) => c.id !== collectionId),
+                    collections: state.collections.filter((c) => c.id !== collectionId).map(c =>
+                        c.parentId === collectionId ? { ...c, parentId: undefined, updatedAt: new Date() } : c),
                     deletionTombstones: [
                         ...state.deletionTombstones,
                         { entityId: collectionId, entityType: "collection" as const, deletedAt: new Date().toISOString() },
@@ -1259,6 +1272,7 @@ export const useLibraryStore = create<LibraryStore>()(
             },
 
             updateCollection: (collectionId, updates) => {
+                if ("parentId" in updates && !canSetShelfParent(get().collections, collectionId, updates.parentId)) return;
                 set((state) => ({
                     collections: state.collections.map((c) =>
                         c.id === collectionId ? { ...c, ...updates, updatedAt: new Date() } : c
@@ -1283,7 +1297,7 @@ export const useLibraryStore = create<LibraryStore>()(
                 let changed = false;
                 set((state) => ({
                     collections: state.collections.map((c) => {
-                        if (c.id !== collectionId) return c;
+                        if (c.id !== collectionId || c.smartRules) return c;
                         const existing = new Set(c.bookIds);
                         const merged = [...c.bookIds];
                         for (const id of validIds) {
@@ -1314,7 +1328,7 @@ export const useLibraryStore = create<LibraryStore>()(
                 const deletedAt = new Date().toISOString();
                 set((state) => {
                     const collections = state.collections.map((c) => {
-                        if (c.id !== collectionId) return c;
+                        if (c.id !== collectionId || c.smartRules) return c;
                         const nextIds = c.bookIds.filter((id) => !idSet.has(id));
                         if (nextIds.length === c.bookIds.length) return c;
                         changed = true;
@@ -1557,7 +1571,7 @@ export const useLibraryStore = create<LibraryStore>()(
         }),
         {
             name: "theorem-library",
-            version: 9,
+            version: 12,
             storage: deferredJsonStorage,
             migrate: (persistedState, version) => {
                 const persisted = (
@@ -1619,7 +1633,7 @@ export const useLibraryStore = create<LibraryStore>()(
 
                 return {
                     books: isTauri() ? [] : books,
-                    collections,
+                    collections: normalizeShelfHierarchy(collections),
                     annotations: isTauri() ? [] : annotations,
                     deletionTombstones,
                     lastScannedAt,
@@ -1643,9 +1657,9 @@ export const useLibraryStore = create<LibraryStore>()(
                     return;
                 }
 
-                state.collections = state.collections
+                state.collections = normalizeShelfHierarchy(state.collections
                     .map((collection) => normalizeCollectionKind(collection as LegacyCollection))
-                    .filter((collection): collection is Collection => Boolean(collection));
+                    .filter((collection): collection is Collection => Boolean(collection)));
 
                 if (isTauri()) {
                     void sqliteGetAllAnnotations().then((annStrings) => {
